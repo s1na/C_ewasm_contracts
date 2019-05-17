@@ -33,9 +33,82 @@ notes:
 */
 
 
-#include "ewasm.h"
+//#include "ewasm.h"
+
+///////////
+// Types //
+///////////
+
+typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
+typedef unsigned int uint32_t;
+typedef unsigned long long uint64_t;
+
+typedef char int8_t;
+typedef short int16_t;
+typedef int int32_t;
+typedef long long int64_t;
+
+typedef unsigned long size_t;
+
+#define NULL 0	//TODO: check how libc defines NULL, I think this affects many things
 
 
+//////////////////////////
+// Types For Wasm Stuff //
+//////////////////////////
+
+typedef int32_t i32; // same as i32 in WebAssembly
+typedef int64_t i64; // same as i64 in WebAssembly
+
+
+
+//////////////////////////////
+// Types for Ethereum Stuff //
+//////////////////////////////
+
+typedef uint8_t* bytes; // an array of bytes with unrestricted length
+typedef uint8_t bytes32[32]; // an array of 32 bytes
+typedef uint8_t address[20]; // an array of 20 bytes
+typedef unsigned __int128 u128; // a 128 bit number, represented as a 16 bytes long little endian unsigned integer in memory, not sure if this works
+//typedef uint256_t u256; // a 256 bit number, represented as a 32 bytes long little endian unsigned integer in memory, doesn't work
+typedef uint32_t i32ptr; // same as i32 in WebAssembly, but treated as a pointer to a WebAssembly memory offset
+
+__attribute__ ((noinline))
+void* memcpy(void* restrict destination, const void* restrict source, size_t len) {
+  uint8_t* destination_ptr = (uint8_t*) destination;
+  uint8_t* source_ptr = (uint8_t*) source;
+  while (len-- > 0) {
+    *destination_ptr++ = *source_ptr++;
+  }
+  return destination;
+}
+
+__attribute__ ((noinline))
+void* memset(void* restrict in, int c, size_t len) {
+  uint8_t* in_ptr = (uint8_t*)in;
+  while (len-- > 0) {
+    *in_ptr++ = c;
+  }
+  return in_ptr;
+}
+
+__attribute__ ((noinline))
+int memcmp ( const void * in1, const void * in2, size_t num ){
+  uint8_t* in1_ptr = (uint8_t*) in1;
+  uint8_t* in2_ptr = (uint8_t*) in2;
+  int ret=0;
+  for (int i=0;i<num;++i){
+    if (in1_ptr[i]!=in2_ptr[i]){
+      if (in1_ptr[i]!=in2_ptr[i])
+        ret=1;
+      else
+        ret=-1;
+      break;
+    }
+  }
+  return ret;
+}
 
 
 // this is needed so that Keccak compiles
@@ -502,9 +575,6 @@ void rhash_keccak_final(sha3_ctx *ctx, unsigned char* result)
 
 
 
-
-
-
 /*
 This is awkward for now. 
 LLVM generated Wasm has a stack which grows down. We want to avoid things being put on this stack.
@@ -512,9 +582,8 @@ So we generate a buffer in global scope, which gets mapped by LLVM to Wasm memor
 In May 2019, LLVM to wasm does not yet support global arrays which are not initialized like this, see:
 https://github.com/llvm-mirror/llvm/blob/c44c327530160e1567da37e2e5877d03d8af4c8a/lib/MC/MCWasmStreamer.cpp#L137-L149
 */
-uint8_t buffer[] = { //432 total bytes, enough for out and sha3_ctx
+uint8_t buffer[] = { //400 total bytes, enough for sha3_ctx
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -529,8 +598,15 @@ uint8_t buffer[] = { //432 total bytes, enough for out and sha3_ctx
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 };
 
-void _main(){
+void _main(i32ptr* resultOffset, i32 dataOffset, i32 length) {
+  sha3_ctx* ctx = (sha3_ctx*) buffer;
+  rhash_keccak_256_init(ctx);
+  rhash_keccak_update(ctx, (unsigned char*) dataOffset, length);
+  rhash_keccak_final(ctx, (unsigned char*) resultOffset);
+}
 
+
+/*void _main(){
   int length = getCallDataSize(); //length in bytes
   unsigned char* in = (unsigned char*) malloc(length);
   callDataCopy( (i32ptr*)in, 0, length ); //get data to hash into memory
@@ -543,4 +619,4 @@ void _main(){
 
   finish((i32ptr*)out,32);
 
-}
+}*/
